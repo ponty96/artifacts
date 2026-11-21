@@ -4,9 +4,9 @@ These standards apply to TypeScript in Voice Incident Commander. Use them for ne
 
 ## Put behavior with the code that owns it
 
-Prefer a class when several operations share state, dependencies, or a lifecycle. Put those operations on the class as named methods. Keep rules that govern state changes with the class that owns the state. For example, `InvestigationRecorder` in `apps/agent/src/reporting/recorder.ts` owns the write queue, call IDs, and the decision to end a recording.
+Prefer a class when several operations share state, dependencies, or a lifecycle. Put those operations on the class as named methods. Keep rules that govern state changes with the class that owns the state. For example, `InvestigationRecorder` in `apps/agent/src/reporting/recorder.ts` owns the write queue, call IDs, where the recording is saved, and the decision to end a recording.
 
-Use an interface to describe what a caller needs from a collaborator. Keep it small and name its methods in the language of the feature. For example, `ToolRecorder` describes the operations for recording the start and end of a tool call. A class can implement that contract and keep its storage details private. [Azure SDK API design](https://azure.github.io/azure-sdk/typescript_design.html)
+Use an interface to describe what a caller needs from a collaborator when there are, or soon will be, implementations that behave differently. Keep it small and name its methods in the language of the feature. A class can implement that contract and keep its storage details private. Don't add an interface only so several classes can do the same job in different places. See the next section. [Azure SDK API design](https://azure.github.io/azure-sdk/typescript_design.html)
 
 Smell
 
@@ -54,6 +54,81 @@ export class InvestigationRecording implements Recording {
 ```
 
 The class controls when recording ends. Callers can record a message or end the recording through the `Recording` interface.
+
+## Make the destination a setting, not a new class
+
+When several classes run the same steps and differ only in where the result goes, such as a file, a database or memory, keep one class. Its public methods build the record and end in one private `saveTo` step. Callers choose the destinations when they construct it, and `saveTo` writes to each one through its own private function. Adding a destination then adds one function, not a class, an interface implementation, and a wrapper to combine them. [Refactoring: Duplicated Code](https://refactoring.com/catalog/) · [Google code review guide](https://google.github.io/eng-practices/review/reviewer/looking-for.html#complexity)
+
+Watch for these signs:
+
+- Two or more classes implement one interface and repeat the same pipeline: counters, IDs, queues, the same event fields.
+- A tee, fan-out or wrapper class exists only to call each implementation in turn.
+- Maps that translate one implementation's IDs into another's.
+- A caller that calls the same method on two objects one line after the other.
+
+Smell
+
+```ts
+interface ToolRecorder {
+  toolStart(e: ToolStart): string;
+}
+
+class FileRecorder implements ToolRecorder {
+  toolStart(e: ToolStart) {
+    const callId = `call_${++this.calls}`;
+    this.appendLine({ type: 'tool_start', callId, ...e });
+    return callId;
+  }
+}
+
+class DbRecorder implements ToolRecorder {
+  toolStart(e: ToolStart) {
+    const key = `t${++this.calls}`;
+    this.ids.set(key, newId('call'));
+    this.insertRow(this.ids.get(key)!, e);
+    return key;
+  }
+}
+
+/** Sends every call to several recorders and maps the first one's ID to the others. */
+class TeeRecorder implements ToolRecorder {
+  toolStart(e: ToolStart) {
+    const ids = this.recorders.map((r) => r.toolStart(e));
+    this.keys.set(ids[0], ids);
+    return ids[0];
+  }
+}
+
+const record = db ? new TeeRecorder(new FileRecorder(dir), new DbRecorder(db)) : new FileRecorder(dir);
+```
+
+Acceptable
+
+```ts
+class InvestigationRecorder {
+  static start(room: string, to: { dir?: string; db?: Db }) {
+    return new InvestigationRecorder(room, to);
+  }
+
+  toolStart(e: ToolStart) {
+    const callId = `call_${++this.calls}`;
+    this.saveTo({ type: 'tool_start', callId, ...e });
+    return callId;
+  }
+
+  // Private
+
+  private saveTo(event: RecordEvent) {
+    const { dir, db } = this;
+    if (dir) this.enqueue(() => saveToFile(dir, event));
+    if (db) this.enqueue(() => this.saveToDb(db, event));
+  }
+}
+
+const record = InvestigationRecorder.start(room, { dir, db });
+```
+
+There is one call ID, one queue, and one place that decides where an event goes. Passing `{ dir, db }` saves to both.
 
 ## Group stateless functions in a module
 

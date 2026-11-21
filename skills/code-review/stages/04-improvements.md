@@ -8,6 +8,10 @@ When reuse looks plausible, search for exact symbols first. Try one focused sear
 
 A new module can use an existing implementation or replace an existing one. Before proposing either direction, compare caller contracts, input and output semantics, ordering, failure handling, and ownership. If the replacement would also change unrelated callers, call out that extra scope and consider a follow-up.
 
+## Look for parallel implementations
+
+When the diff adds or changes a class that implements a shared interface, or adds a wrapper, tee or adapter, list its sibling implementations. Read them side by side. Look for repeated steps such as counters, ID generation, write queues and event building. Look for wrappers that only forward each call, and for maps that translate one implementation's IDs into another's. When the siblings differ mainly in where they send the result, propose one class whose methods end in a single `saveTo` step, with the destinations chosen at construction. Check that callers, ordering and failure behavior stay the same, and name any shared resource the merge introduces, such as one write queue instead of two. If the siblings differ in what they compute, the interface is earning its place, so leave them.
+
 ## Improvement rubric
 
 This rubric is non-exhaustive. Use it to find weaknesses in a candidate before you report it.
