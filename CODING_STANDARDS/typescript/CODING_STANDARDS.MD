@@ -242,3 +242,127 @@ export type ToolCallResult =
 ```
 
 The first type accepts `ran: false` with `status: 'success'`. The second requires a status for a finished call and reserves `skipped` for declined or expired approvals.
+
+## Keep expressions and type contracts readable
+
+### Name an awaited result before combining it
+
+When a call combines an awaited result with other work, assign the result to a named variable first. This makes the wait and the next use visible. Keep the order of requests, checks, and writes when you split an expression. A direct `await` is clear when it stands on its own or supplies a single result.
+
+Smell
+
+```ts
+reasons.push(
+  ...gradeObservations(expectations, observations),
+  ...(await checkRootCauseClaims(recordDir, reportModel)),
+);
+```
+
+Acceptable
+
+```ts
+const observationReasons = gradeObservations(expectations, observations);
+const claimReasons = await checkRootCauseClaims(recordDir, reportModel);
+
+reasons.push(...observationReasons, ...claimReasons);
+```
+
+### Show the order of business decisions
+
+When several conditions decide a result, use guards or a `switch` to make their priority visible. Use a named function when the decisions form one rule. A short conditional expression works well for a single choice.
+
+Smell
+
+```ts
+const status = live ? 'in_call' : storedStatus === 'in_call' ? 'paused' : storedStatus;
+```
+
+Acceptable
+
+```ts
+function displayCallStatus(storedStatus: DisplayStatus, live: boolean): DisplayStatus {
+  if (live) {
+    return 'in_call';
+  }
+  if (storedStatus === 'in_call') {
+    return 'paused';
+  }
+  return storedStatus;
+}
+
+const status = displayCallStatus(storedStatus, live);
+```
+
+### Use the domain type in the signature
+
+Use an existing domain type when it describes what the function needs. If a derived type hides that meaning, give it a name. A generic return type such as `S` promises to preserve every constraint of the caller's type. When the function replaces a field that the caller can narrow, return the result type that the function can guarantee.
+
+Smell
+
+```ts
+function replaceStatements<S extends Brief[keyof Brief]>(
+  section: S,
+  statements: Statement[],
+): S {
+  return { ...section, statements };
+}
+```
+
+Acceptable
+
+```ts
+function replaceStatements(section: BriefSection, statements: Statement[]): BriefSection {
+  return { ...section, statements };
+}
+
+const rootCause: Brief['rootCause'] = {
+  ...replaceStatements(brief.rootCause, checkedStatements),
+  status: brief.rootCause.status,
+};
+```
+
+### Give non-trivial options a name
+
+If a signature is hard to scan, give its options a domain name. This is especially useful when the signature also destructures the options or sets defaults. Keep short shapes inline when their fields make the contract clear.
+
+Smell
+
+```ts
+declare function generateReport(
+  dir: string,
+  options?: { complete?: Complete; model?: string; force?: boolean },
+): Promise<GenerateResult>;
+```
+
+Acceptable
+
+```ts
+interface GenerateReportOptions {
+  complete?: Complete;
+  model?: string;
+  force?: boolean;
+}
+
+declare function generateReport(
+  dir: string,
+  options?: GenerateReportOptions,
+): Promise<GenerateResult>;
+```
+
+### Show where input gets checked
+
+When reading JSON from a file, request, or model, use a schema or a runtime check to confirm the expected shape. Handle invalid input according to the caller's error contract. When constructing a known object in code, use its declared type so TypeScript can check the fields. For a nullable value, show the guard near its use when the type still allows it to be absent.
+
+Smell
+
+```ts
+const report = JSON.parse(await readFile(reportPath, 'utf8')) as Report;
+```
+
+Acceptable
+
+```ts
+const reportText = await readFile(reportPath, 'utf8');
+const parsedReport: unknown = JSON.parse(reportText);
+const report = Report.parse(parsedReport);
+```
