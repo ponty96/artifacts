@@ -187,7 +187,7 @@ When only grading uses the two tool checks, keep both in `scenario-grading.ts` w
 
 ## Put the public API above `// Private`
 
-Start each file with its imports. Then put the public functions, classes, types, and constants that other modules use. Put file-local declarations below a `// Private` comment and leave them unexported. TypeScript modules already keep unexported declarations local. The comment marks where the implementation starts.
+Start each file with its imports. Then put the public functions, classes, types, and constants that other modules use. Put file-local declarations below a `// Private` comment and leave them unexported. TypeScript modules already keep unexported declarations local. The comment marks where the implementation starts. When top-level `const` initializers call a file-local `const` helper or schema at module load (such as Drizzle tables or Zod schemas), keep that declaration above the exports that use it.
 
 Inside a class, list its public members before its private members. Put private members below their own `// Private` comment. Use `private` or `#` to restrict access. Keep field initialization in dependency order. If a module or class has no private section, omit the marker. [TypeScript modules](https://www.typescriptlang.org/docs/handbook/2/modules.html)
 
@@ -322,7 +322,7 @@ The first type accepts `ran: false` with `status: 'success'`. The second require
 
 ### Name an awaited result before combining it
 
-When a call combines an awaited result with other work, assign the result to a named variable first. This makes the wait and the next use visible. Keep the order of requests, checks, and writes when you split an expression. A direct `await` is clear when it stands on its own or supplies a single result.
+When a call chains several steps around an `await` or combines an awaited result with other work, assign the result to a named variable first. This makes the wait and the next use visible. Keep the order of requests, checks, and writes when you split an expression. A direct `await` is clear when it stands on its own or passes a single result straight into one call, such as `buildFacts(await readEvents(dir))`.
 
 Smell
 
@@ -344,7 +344,7 @@ reasons.push(...observationReasons, ...claimReasons);
 
 ### Show the order of business decisions
 
-When several conditions decide a result, use guards or a `switch` to make their priority visible. Use a named function when the decisions form one rule. A short conditional expression works well for a single choice.
+When several conditions decide a result, use guards or a `switch` to make their priority visible. Use a named function when the decisions form one rule. A short conditional expression works well for a single choice. For a discriminated union, use `switch` on its tag rather than an `if` chain with an implicit fallthrough, so every variant is visible in one place.
 
 Smell
 
@@ -394,6 +394,26 @@ const rootCause: Brief['rootCause'] = {
   ...replaceStatements(brief.rootCause, checkedStatements),
   status: brief.rootCause.status,
 };
+```
+
+### Use domain names outside short callbacks
+
+Single-letter names (`c`, `m`, `s`) are fine in one-line collection callbacks where the collection name gives the context. Outside short callbacks—in function parameters, component props, and multi-line loops or JSX blocks—use the domain noun (`integration`, `request`, `scenario`). Don't give two different concepts in adjacent features the same name; distinguish them in code the way the product does (for example, `Investigation` vs. `EvaluationReport`).
+
+Smell
+
+```tsx
+export function IntegrationDetail({ integration: i }: { integration: Integration }) {
+  return <h1>{i.name}</h1>;
+}
+```
+
+Acceptable
+
+```tsx
+export function IntegrationDetail({ integration }: { integration: Integration }) {
+  return <h1>{integration.name}</h1>;
+}
 ```
 
 ### Give non-trivial options a name
